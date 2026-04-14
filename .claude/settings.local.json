@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run:*)",
+      "mcp__claude_ai_CData_Connect_AI__getInstructions",
+      "mcp__claude_ai_CData_Connect_AI__getCatalogs",
+      "mcp__claude_ai_CData_Connect_AI__getColumns",
+      "mcp__claude_ai_CData_Connect_AI__queryData",
+      "Bash(node:*)"
+    ]
+  }
+}
