@@ -7,7 +7,6 @@ const SK = {
   comments:  "enbd-v4-comments",
   changelog: "enbd-v4-changelog",
   user:      "enbd-v4-user",
-  apiKey:    "enbd-v4-apikey",
   lastVisit: "enbd-v4-lastvisit",
   added:     "enbd-v4-added",
 
@@ -213,110 +212,6 @@ function CommentPanel({caseNum,user,comments,onAdd}) {
       <div style={{display:"flex",gap:8,alignItems:"flex-start"}}>
         <textarea value={text} onChange={e=>setText(e.target.value)} rows={2} placeholder="Add a comment..." style={{flex:1,padding:"6px 8px",borderRadius:5,border:`1px solid ${C.border}`,fontSize:10.5,resize:"vertical",fontFamily:"inherit",outline:"none"}}/>
         <button onClick={()=>{if(text.trim()){onAdd(caseNum,{name:user.name,org:user.org,text:text.trim(),ts:fmtTs()});setText("");}}} disabled={!text.trim()} style={{padding:"7px 14px",borderRadius:5,border:"none",background:text.trim()?C.teal:"#CBD5E0",color:"white",fontWeight:700,fontSize:10.5,cursor:text.trim()?"pointer":"not-allowed",whiteSpace:"nowrap"}}>Post</button>
-      </div>
-    </div>
-  );
-}
-
-// ─── LIVE SF + JIRA PANEL ─────────────────────────────────────────────────────
-function LiveDataPanel({c,isFP}) {
-  const [loading,setLoading]=useState(false);
-  const [sfNotes,setSfNotes]=useState(null);
-  const [jiraTickets,setJiraTickets]=useState(null);
-  const [loaded,setLoaded]=useState(false);
-  const [failed,setFailed]=useState(null);
-  const [apiKey,setApiKey]=useState(null);
-  const [keyInput,setKeyInput]=useState("");
-
-  useEffect(()=>{
-    if(!isFP) return;
-    (async()=>{ const k=await lsGet(SK.apiKey,true); setApiKey(k||""); })();
-  },[isFP]);
-
-  const reset=useCallback(()=>{setLoaded(false);setSfNotes(null);setJiraTickets(null);setFailed(null);},[]);
-
-  const load=useCallback(async(key)=>{
-    if(loaded||loading) return;
-    setLoading(true); setFailed(null);
-    const hdrs={"Content-Type":"application/json","x-api-key":key,"anthropic-version":"2023-06-01","anthropic-beta":"mcp-client-2025-04-04"};
-    const mcpServers=[{type:"url",url:"https://mcp.cloud.cdata.com/mcp",name:"cdata"}];
-    const parseReply=d=>{ const t=(d.content||[]).flatMap(b=>b.type==="text"?[b.text]:b.type==="mcp_tool_result"?(b.content||[]).filter(x=>x.type==="text").map(x=>x.text):[]).join(""); const j=t.slice(t.indexOf("{"),t.lastIndexOf("}")+1); return j?JSON.parse(j):{}; };
-    try {
-      let sfN=[], jiraT=[];
-      try {
-        const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:hdrs,body:JSON.stringify({model:"claude-haiku-4-5-20251001",max_tokens:800,system:"Query CData MCP. Return ONLY valid JSON: {\"comments\":[{\"body\":\"...\",\"date\":\"...\",\"isPublic\":true}]}",messages:[{role:"user",content:`SELECT CommentBody,CreatedDate,IsPublished FROM [Salesforce].[Salesforce].[CaseComment] WHERE [ParentId] IN (SELECT [Id] FROM [Salesforce].[Salesforce].[Case] WHERE [CaseNumber]='${c.case}') ORDER BY CreatedDate DESC LIMIT 5`}],mcp_servers:mcpServers})});
-        if(!r.ok) throw new Error(`SF ${r.status}`);
-        sfN=parseReply(await r.json()).comments||[];
-      } catch(e){ console.warn("SF:",e.message); }
-      setSfNotes(sfN);
-      try {
-        const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:hdrs,body:JSON.stringify({model:"claude-haiku-4-5-20251001",max_tokens:800,system:"Query CData MCP. Return ONLY valid JSON: {\"issues\":[{\"key\":\"...\",\"summary\":\"...\",\"status\":\"...\",\"assignee\":\"...\",\"updated\":\"...\"}]}",messages:[{role:"user",content:`SELECT [Key],[Summary],[StatusName],[AssigneeDisplayName],[Updated] FROM [Jira].[Jira].[Issues] WHERE [ProjectKey] IN ('GS','DSPM','ROC','EI') AND ([Summary] LIKE '%${c.case}%' OR [Description] LIKE '%${c.case}%' OR [Summary] LIKE '%ENBD%') AND [Updated]>='2024-01-01' ORDER BY [Updated] DESC LIMIT 8`}],mcp_servers:mcpServers})});
-        if(!r.ok) throw new Error(`Jira ${r.status}`);
-        jiraT=parseReply(await r.json()).issues||[];
-      } catch(e){ console.warn("Jira:",e.message); }
-      setJiraTickets(jiraT); setLoaded(true);
-    } catch(e) { setFailed(e.message||"Unknown error"); }
-    setLoading(false);
-  },[c.case,loaded,loading]);
-
-  useEffect(()=>{ if(apiKey) load(apiKey); },[apiKey,load]);
-
-  if(!isFP) return null;
-
-  if(apiKey===null) return null; // still reading from storage
-
-  if(!apiKey) return (
-    <div style={{padding:"12px 14px",borderTop:`1px solid ${C.border}`,background:"#FFFBEB",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-      <span style={{fontFamily:"monospace",fontSize:9,fontWeight:700,color:C.amber}}>🔑 Anthropic API Key required for live SF + Jira data</span>
-      <input type="password" value={keyInput} onChange={e=>setKeyInput(e.target.value)} onKeyDown={e=>{ if(e.key==="Enter"&&keyInput.trim()){ lsSet(SK.apiKey,keyInput.trim(),true); setApiKey(keyInput.trim()); }}} placeholder="sk-ant-..." style={{flex:1,minWidth:200,padding:"4px 8px",borderRadius:5,border:`1px solid ${C.amberBd}`,fontSize:10.5,outline:"none"}}/>
-      <button onClick={()=>{ if(keyInput.trim()){ lsSet(SK.apiKey,keyInput.trim(),true); setApiKey(keyInput.trim()); }}} disabled={!keyInput.trim()} style={{padding:"4px 12px",borderRadius:5,border:"none",background:keyInput.trim()?C.teal:"#CBD5E0",color:"white",fontWeight:700,fontSize:10.5,cursor:keyInput.trim()?"pointer":"not-allowed",whiteSpace:"nowrap"}}>Save Key</button>
-    </div>
-  );
-
-  if(failed) return (
-    <div style={{padding:"10px 14px",borderTop:`1px solid ${C.border}`,background:C.redBg,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-      <span style={{fontSize:10,color:C.red,fontFamily:"monospace"}}>⚠ Live data error: {failed}</span>
-      <button onClick={()=>{reset();load(apiKey);}} style={{fontSize:9,padding:"2px 8px",borderRadius:4,border:`1px solid ${C.redBd}`,background:"white",color:C.red,cursor:"pointer",fontFamily:"monospace"}}>↻ Retry</button>
-      <button onClick={()=>{lsSet(SK.apiKey,"",true);setApiKey("");reset();}} style={{fontSize:9,padding:"2px 8px",borderRadius:4,border:`1px solid ${C.border}`,background:"white",color:C.inkMid,cursor:"pointer",fontFamily:"monospace"}}>Change Key</button>
-    </div>
-  );
-
-  const jsc=s=>{if(!s)return"grey";const l=s.toLowerCase();if(l==="done"||l==="closed")return"green";if(l.includes("progress"))return"amber";return"purple";};
-  return (
-    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",borderTop:`1px solid ${C.border}`}}>
-      <div style={{padding:"12px 14px",borderRight:`1px solid ${C.border}`,background:"#FFF9F0"}}>
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
-          <div style={{fontFamily:"monospace",fontSize:9,fontWeight:700,color:"#B45309",textTransform:"uppercase",letterSpacing:.5}}>☁ Salesforce — Latest Notes</div>
-          {loaded&&<button onClick={()=>{reset();load(apiKey);}} style={{fontSize:8,padding:"2px 7px",borderRadius:4,border:`1px solid ${C.amberBd}`,background:C.amberBg,color:C.amber,cursor:"pointer",fontFamily:"monospace"}}>↻</button>}
-        </div>
-        {loading&&<div style={{fontSize:10,color:C.inkSoft,fontStyle:"italic"}}>⟳ Loading...</div>}
-        {!loading&&sfNotes&&sfNotes.length===0&&<div style={{fontSize:10,color:C.inkSoft,fontStyle:"italic"}}>No case comments found.</div>}
-        {sfNotes&&sfNotes.length>0&&<div style={{display:"flex",flexDirection:"column",gap:6,maxHeight:150,overflowY:"auto"}}>{sfNotes.map((n,i)=>(
-          <div key={i} style={{background:"white",border:`1px solid ${C.amberBd}`,borderRadius:5,padding:"7px 10px"}}>
-            <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:3}}>
-              {n.isPublic===false&&<span style={{fontSize:8,fontFamily:"monospace",padding:"1px 5px",borderRadius:10,background:"#FEE2E2",color:C.red,border:`1px solid ${C.redBd}`}}>INTERNAL</span>}
-              {n.isPublic===true&&<span style={{fontSize:8,fontFamily:"monospace",padding:"1px 5px",borderRadius:10,background:C.greenBg,color:C.green,border:`1px solid ${C.greenBd}`}}>PUBLIC</span>}
-              <span style={{fontSize:8,color:C.inkSoft,fontFamily:"monospace",marginLeft:"auto"}}>{n.date?new Date(n.date).toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"}):""}</span>
-            </div>
-            <div style={{fontSize:10,color:C.ink,lineHeight:1.5,whiteSpace:"pre-wrap"}}>{n.body}</div>
-          </div>
-        ))}</div>}
-      </div>
-      <div style={{padding:"12px 14px",background:"#F8F5FF"}}>
-        <div style={{fontFamily:"monospace",fontSize:9,fontWeight:700,color:C.purple,marginBottom:8,textTransform:"uppercase",letterSpacing:.5}}>🎫 Jira — Linked Tickets (GS)</div>
-        {loading&&<div style={{fontSize:10,color:C.inkSoft,fontStyle:"italic"}}>⟳ Loading...</div>}
-        {!loading&&jiraTickets&&jiraTickets.length===0&&<div style={{fontSize:10,color:C.inkSoft,fontStyle:"italic"}}>No linked Jira tickets found.</div>}
-        {jiraTickets&&jiraTickets.length>0&&<div style={{display:"flex",flexDirection:"column",gap:6,maxHeight:150,overflowY:"auto"}}>{jiraTickets.map((t,i)=>(
-          <div key={i} style={{background:"white",border:`1px solid ${C.purpleBd}`,borderRadius:5,padding:"7px 10px"}}>
-            <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:3}}>
-              <a href={`https://forcepoint.atlassian.net/browse/${t.key}`} target="_blank" rel="noopener noreferrer" style={{fontFamily:"monospace",fontSize:9,fontWeight:700,color:C.purple,textDecoration:"none",borderBottom:`1px dashed ${C.purple}`}}>{t.key}</a>
-              {pill(t.status,jsc(t.status))}
-              <span style={{fontSize:8,color:C.inkSoft,fontFamily:"monospace",marginLeft:"auto"}}>{t.updated?new Date(t.updated).toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"}):""}</span>
-            </div>
-            <div style={{fontSize:10,color:C.ink,lineHeight:1.4}}>{t.summary}</div>
-            {t.assignee&&<div style={{fontSize:9,color:C.inkSoft,marginTop:2}}>👤 {t.assignee}</div>}
-          </div>
-        ))}</div>}
       </div>
     </div>
   );
@@ -781,7 +676,6 @@ export default function App() {
                             <button onClick={()=>addComment(c.case,{name:user.name,org:user.org,text:"✅ ENBD confirms this case is resolved.",ts:fmtTs()})} style={{marginTop:10,padding:"7px 16px",borderRadius:5,border:`1px solid ${C.greenBd}`,background:C.greenBg,color:C.green,fontSize:10.5,fontWeight:700,cursor:"pointer"}}>✓ Confirm Resolved</button>
                           )}
                         </div>
-                        <LiveDataPanel c={c} isFP={isFP}/>
                         <CommentPanel caseNum={c.case} user={user} comments={comments} onAdd={addComment}/>
                       </td>
                     </tr>
